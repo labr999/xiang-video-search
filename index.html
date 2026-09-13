@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>象棋開局影片搜尋</title>
+<style>
+  :root{
+    --red:#b3261e; --red-dark:#7d1a14; --gold:#d4af37; --gold-light:#f4e6b8;
+    --bg:#fdfaf3; --surface:#ffffff; --text:#2b1a14; --text-dim:#7a6a5f;
+    --radius:16px; --shadow:0 2px 8px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1c1512; --surface:#2a201b; --text:#f2e8dc; --text-dim:#b8a99b; }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif;
+    background:var(--bg); color:var(--text);
+    padding-bottom:calc(72px + env(safe-area-inset-bottom));
+  }
+  header{
+    background:linear-gradient(135deg,var(--red),var(--red-dark));
+    color:#fff; padding:calc(16px + env(safe-area-inset-top)) 20px 16px;
+    position:sticky; top:0; z-index:10; box-shadow:var(--shadow);
+  }
+  header h1{margin:0; font-size:20px; font-weight:700;}
+  header p{margin:4px 0 0; font-size:12px; opacity:.85;}
+
+  .search-bar{ padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .search-row{ display:flex; gap:8px; }
+  input[type=text]{
+    flex:1; padding:12px 14px; border-radius:var(--radius); border:1px solid #0002;
+    background:var(--surface); color:var(--text); font-size:15px; min-height:48px;
+  }
+  button{
+    border:none; border-radius:var(--radius); font-size:14px; font-weight:600;
+    cursor:pointer; min-height:48px; padding:0 18px;
+  }
+  .btn-primary{ background:var(--red); color:#fff; }
+  .btn-primary:active{ background:var(--red-dark); }
+  .scope-toggle{ display:flex; background:var(--surface); border-radius:999px; padding:4px; box-shadow:var(--shadow); }
+  .scope-toggle button{
+    flex:1; background:transparent; color:var(--text-dim); min-height:40px; border-radius:999px; font-size:13px;
+  }
+  .scope-toggle button.active{ background:var(--gold); color:var(--red-dark); }
+
+  .status{ padding:0 16px; font-size:13px; color:var(--text-dim); min-height:18px; }
+
+  .results{ padding:0 16px; display:flex; flex-direction:column; gap:12px; }
+  .card{
+    background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow);
+    overflow:hidden; display:flex; flex-direction:column;
+  }
+  .card .thumb-wrap{ position:relative; }
+  .card img{ width:100%; display:block; aspect-ratio:16/9; object-fit:cover; background:#0001; }
+  .card .body{ padding:12px 14px 14px; display:flex; flex-direction:column; gap:8px; }
+  .card .title{ font-size:14px; font-weight:600; line-height:1.4; }
+  .card .meta{ font-size:12px; color:var(--text-dim); }
+  .card .tag-row{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  select{
+    padding:8px 10px; border-radius:10px; border:1px solid #0002; background:var(--bg);
+    color:var(--text); font-size:13px; min-height:40px;
+  }
+  .btn-save{ background:var(--gold); color:var(--red-dark); font-size:13px; padding:0 14px; min-height:40px; }
+  .btn-save.saved{ background:#4caf50; color:#fff; }
+  .btn-link{ background:transparent; color:var(--red); text-decoration:underline; padding:0; min-height:auto; font-size:12px; }
+  .saved-badge{
+    position:absolute; top:8px; left:8px; background:#4caf50; color:#fff; font-size:11px;
+    padding:3px 8px; border-radius:999px; font-weight:600;
+  }
+
+  .empty{ text-align:center; color:var(--text-dim); padding:40px 20px; font-size:14px; }
+
+  nav.bottom{
+    position:fixed; bottom:0; left:0; right:0; background:var(--surface);
+    display:flex; box-shadow:0 -2px 8px rgba(0,0,0,.08);
+    padding-bottom:env(safe-area-inset-bottom); z-index:10;
+  }
+  nav.bottom button{
+    flex:1; background:transparent; border-radius:0; color:var(--text-dim);
+    display:flex; flex-direction:column; align-items:center; gap:2px; padding:10px 0 8px; font-size:11px;
+  }
+  nav.bottom button.active{ color:var(--red); }
+  nav.bottom .icon{ font-size:20px; }
+
+  .filter-row{ padding:0 16px 8px; display:flex; gap:8px; overflow-x:auto; }
+  .filter-chip{
+    background:var(--surface); border-radius:999px; padding:6px 14px; font-size:12px;
+    white-space:nowrap; color:var(--text-dim); box-shadow:var(--shadow); min-height:auto;
+  }
+  .filter-chip.active{ background:var(--gold); color:var(--red-dark); }
+
+  .settings{ padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .settings label{ font-size:13px; color:var(--text-dim); }
+  .settings .field{ display:flex; flex-direction:column; gap:6px; }
+  .hint{ font-size:12px; color:var(--text-dim); line-height:1.6; }
+
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>♟ 象棋開局影片搜尋</h1>
+  <p>搜尋象棋開局教學影片，標記所屬開局分類</p>
+</header>
+
+<!-- 搜尋分頁 -->
+<section id="page-search">
+  <div class="search-bar">
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="輸入關鍵字，例如：中炮 屏風馬" enterkeyhint="search">
+      <button class="btn-primary" id="searchBtn">搜尋</button>
+    </div>
+    <div class="scope-toggle">
+      <button id="scopeChannel" class="active">只搜自己頻道</button>
+      <button id="scopeGlobal">全部 YouTube</button>
+    </div>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="results" id="results"></div>
+  <div class="search-row" style="padding:0 16px 16px;">
+    <button class="btn-primary hidden" id="loadMoreBtn" style="width:100%;">載入更多</button>
+  </div>
+</section>
+
+<!-- 已標記分頁 -->
+<section id="page-tags" class="hidden">
+  <div class="filter-row" id="filterRow"></div>
+  <div class="status" id="tagsStatus"></div>
+  <div class="results" id="tagsResults"></div>
+</section>
+
+<!-- 設定分頁 -->
+<section id="page-settings" class="hidden">
+  <div class="settings">
+    <div class="field">
+      <label>後端 API 網址（部署到 Render/Railway 後填入）</label>
+      <input type="text" id="apiBaseInput" placeholder="https://your-app.onrender.com">
+    </div>
+    <button class="btn-primary" id="saveApiBase">儲存設定</button>
+    <div class="hint">
+      這個網址是你架設的後端伺服器位址（負責呼叫 YouTube API 與儲存分類標記）。<br><br>
+      設定會儲存在這台裝置的瀏覽器裡，換裝置或清除瀏覽器資料需要重新輸入。
+    </div>
+  </div>
+</section>
+
+<nav class="bottom">
+  <button data-page="search" class="active"><span class="icon">🔍</span>搜尋</button>
+  <button data-page="tags"><span class="icon">🏷️</span>已標記</button>
+  <button data-page="settings"><span class="icon">⚙️</span>設定</button>
+</nav>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = "xqvs_api_base";
+  var apiBase = localStorage.getItem(STORAGE_KEY) || "";
+  var scope = "channel";
+  var nextPageToken = null;
+  var lastQuery = "";
+  var openingCategories = null;
+  var currentFilter = null;
+
+  // ---------- 分頁切換 ----------
+  var pages = { search: document.getElementById("page-search"),
+                tags: document.getElementById("page-tags"),
+                settings: document.getElementById("page-settings") };
+  document.querySelectorAll("nav.bottom button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      document.querySelectorAll("nav.bottom button").forEach(function(b){ b.classList.remove("active"); });
+      btn.classList.add("active");
+      Object.keys(pages).forEach(function(k){ pages[k].classList.add("hidden"); });
+      pages[btn.dataset.page].classList.remove("hidden");
+      if (btn.dataset.page === "tags") loadTags();
+      if (btn.dataset.page === "settings") {
+        document.getElementById("apiBaseInput").value = apiBase;
+      }
+    });
+  });
+
+  // ---------- 設定 ----------
+  document.getElementById("saveApiBase").addEventListener("click", function(){
+    apiBase = document.getElementById("apiBaseInput").value.trim().replace(/\/$/, "");
+    localStorage.setItem(STORAGE_KEY, apiBase);
+    alert("已儲存。回到搜尋分頁即可使用。");
+  });
+
+  function requireApiBase(){
+    if (!apiBase){
+      alert("請先到「設定」分頁填入後端 API 網址。");
+      document.querySelector('nav.bottom button[data-page="settings"]').click();
+      return false;
+    }
+    return true;
+  }
+
+  // ---------- 搜尋範圍切換 ----------
+  document.getElementById("scopeChannel").addEventListener("click", function(){
+    scope = "channel";
+    document.getElementById("scopeChannel").classList.add("active");
+    document.getElementById("scopeGlobal").classList.remove("active");
+  });
+  document.getElementById("scopeGlobal").addEventListener("click", function(){
+    scope = "global";
+    document.getElementById("scopeGlobal").classList.add("active");
+    document.getElementById("scopeChannel").classList.remove("active");
+  });
+
+  // ---------- 搜尋 ----------
+  var resultsEl = document.getElementById("results");
+  var statusEl = document.getElementById("status");
+  var loadMoreBtn = document.getElementById("loadMoreBtn");
+
+  document.getElementById("searchBtn").addEventListener("click", function(){
+    if (!requireApiBase()) return;
+    var q = document.getElementById("searchInput").value.trim();
+    if (!q){ alert("請輸入搜尋關鍵字"); return; }
+    lastQuery = q;
+    nextPageToken = null;
+    resultsEl.innerHTML = "";
+    doSearch();
+  });
+  document.getElementById("searchInput").addEventListener("keydown", function(e){
+    if (e.key === "Enter") document.getElementById("searchBtn").click();
+  });
+  loadMoreBtn.addEventListener("click", doSearch);
+
+  function doSearch(){
+    statusEl.textContent = "搜尋中…";
+    loadMoreBtn.classList.add("hidden");
+    var url = apiBase + "/api/search?q=" + encodeURIComponent(lastQuery) + "&scope=" + scope;
+    if (nextPageToken) url += "&pageToken=" + encodeURIComponent(nextPageToken);
+
+    fetch(url).then(function(r){
+      if (!r.ok) return r.json().then(function(e){ throw new Error(e.detail || r.statusText); });
+      return r.json();
+    }).then(function(data){
+      statusEl.textContent = data.totalResults != null ? ("共 " + data.totalResults + " 筆結果") : "";
+      nextPageToken = data.nextPageToken || null;
+      loadMoreBtn.classList.toggle("hidden", !nextPageToken);
+      renderResults(data.items || []);
+    }).catch(function(err){
+      statusEl.textContent = "";
+      alert("搜尋失敗：" + err.message);
+    });
+  }
+
+  function getOpeningCategories(){
+    if (openingCategories) return Promise.resolve(openingCategories);
+    return fetch(apiBase + "/api/openings").then(function(r){ return r.json(); }).then(function(d){
+      openingCategories = d;
+      return d;
+    });
+  }
+
+  function renderResults(items){
+    if (items.length === 0 && resultsEl.children.length === 0){
+      resultsEl.innerHTML = '<div class="empty">沒有找到相關影片，換個關鍵字試試？</div>';
+      return;
+    }
+    getOpeningCategories().then(function(cats){
+      items.forEach(function(item){ resultsEl.appendChild(buildCard(item, cats)); });
+    });
+  }
+
+  function buildCard(item, cats){
+    var card = document.createElement("div");
+    card.className = "card";
+
+    var sideOptions = Object.keys(cats).map(function(side){
+      return '<option value="' + side + '">' + side + '</option>';
+    }).join("");
+
+    card.innerHTML =
+      '<div class="thumb-wrap">' +
+        '<img src="' + item.thumbnail + '" loading="lazy" alt="">' +
+      '</div>' +
+      '<div class="body">' +
+        '<div class="title">' + escapeHtml(item.title) + '</div>' +
+        '<div class="meta">' + escapeHtml(item.channel) + ' · ' + formatDate(item.publishedAt) + '</div>' +
+        '<div class="tag-row">' +
+          '<select class="sideSelect">' + sideOptions + '</select>' +
+          '<select class="openingSelect"></select>' +
+          '<button class="btn-save">標記</button>' +
+        '</div>' +
+        '<a class="btn-link" target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=' + item.videoId + '">在 YouTube 開啟 ↗</a>' +
+      '</div>';
+
+    var sideSelect = card.querySelector(".sideSelect");
+    var openingSelect = card.querySelector(".openingSelect");
+    function fillOpenings(){
+      openingSelect.innerHTML = cats[sideSelect.value].map(function(o){
+        return '<option value="' + o + '">' + o + '</option>';
+      }).join("");
+    }
+    fillOpenings();
+    sideSelect.addEventListener("change", fillOpenings);
+
+    var saveBtn = card.querySelector(".btn-save");
+    saveBtn.addEventListener("click", function(){
+      saveBtn.disabled = true; saveBtn.textContent = "儲存中…";
+      fetch(apiBase + "/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          video_id: item.videoId,
+          title: item.title,
+          thumbnail: item.thumbnail,
+          channel: item.channel,
+          opening: openingSelect.value,
+          side: sideSelect.value
+        })
+      }).then(function(r){
+        if (!r.ok) throw new Error("儲存失敗");
+        saveBtn.textContent = "已標記 ✓";
+        saveBtn.classList.add("saved");
+      }).catch(function(err){
+        saveBtn.disabled = false; saveBtn.textContent = "標記";
+        alert(err.message);
+      });
+    });
+
+    return card;
+  }
+
+  // ---------- 已標記分頁 ----------
+  var tagsResultsEl = document.getElementById("tagsResults");
+  var tagsStatusEl = document.getElementById("tagsStatus");
+  var filterRowEl = document.getElementById("filterRow");
+  var allTags = [];
+
+  function loadTags(){
+    if (!apiBase){ tagsStatusEl.textContent = "請先到設定分頁填入後端網址"; return; }
+    tagsStatusEl.textContent = "載入中…";
+    fetch(apiBase + "/api/tags").then(function(r){ return r.json(); }).then(function(data){
+      allTags = data;
+      tagsStatusEl.textContent = "共 " + data.length + " 筆標記";
+      renderFilterChips();
+      renderTagList();
+    }).catch(function(err){
+      tagsStatusEl.textContent = "載入失敗：" + err.message;
+    });
+  }
+
+  function renderFilterChips(){
+    var openings = Array.from(new Set(allTags.map(function(t){ return t.opening; })));
+    filterRowEl.innerHTML = "";
+    var allChip = document.createElement("button");
+    allChip.className = "filter-chip" + (currentFilter === null ? " active" : "");
+    allChip.textContent = "全部";
+    allChip.addEventListener("click", function(){ currentFilter = null; renderFilterChips(); renderTagList(); });
+    filterRowEl.appendChild(allChip);
+    openings.forEach(function(o){
+      var chip = document.createElement("button");
+      chip.className = "filter-chip" + (currentFilter === o ? " active" : "");
+      chip.textContent = o;
+      chip.addEventListener("click", function(){ currentFilter = o; renderFilterChips(); renderTagList(); });
+      filterRowEl.appendChild(chip);
+    });
+  }
+
+  function renderTagList(){
+    var list = currentFilter ? allTags.filter(function(t){ return t.opening === currentFilter; }) : allTags;
+    tagsResultsEl.innerHTML = "";
+    if (list.length === 0){
+      tagsResultsEl.innerHTML = '<div class="empty">還沒有標記的影片</div>';
+      return;
+    }
+    list.forEach(function(t){
+      var card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML =
+        '<div class="thumb-wrap">' +
+          (t.thumbnail ? '<img src="' + t.thumbnail + '" loading="lazy" alt="">' : '') +
+        '</div>' +
+        '<div class="body">' +
+          '<div class="title">' + escapeHtml(t.title || t.video_id) + '</div>' +
+          '<div class="meta">' + escapeHtml(t.channel || "") + '</div>' +
+          '<div class="tag-row"><span class="filter-chip active">' + (t.side || "") + ' · ' + t.opening + '</span></div>' +
+          '<a class="btn-link" target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=' + t.video_id + '">在 YouTube 開啟 ↗</a>' +
+        '</div>';
+      tagsResultsEl.appendChild(card);
+    });
+  }
+
+  // ---------- 工具 ----------
+  function escapeHtml(s){
+    return String(s || "").replace(/[&<>"']/g, function(c){
+      return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c];
+    });
+  }
+  function formatDate(iso){
+    if (!iso) return "";
+    var d = new Date(iso);
+    return d.getFullYear() + "/" + (d.getMonth()+1) + "/" + d.getDate();
+  }
+
+  // 啟動時若尚未設定 API base，直接跳到設定頁
+  if (!apiBase){
+    document.getElementById("apiBaseInput").value = "";
+  }
+})();
+</script>
+
+</body>
+</html>
