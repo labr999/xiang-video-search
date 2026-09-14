@@ -114,8 +114,9 @@
       <button class="btn-primary" id="searchBtn">搜尋</button>
     </div>
     <div class="scope-toggle">
-      <button id="scopeChannel" class="active">只搜自己頻道</button>
+      <button id="scopeChannel" class="active">自己頻道</button>
       <button id="scopeGlobal">全部 YouTube</button>
+      <button id="scopePlaylist">播放清單</button>
     </div>
   </div>
   <div class="status" id="status"></div>
@@ -143,6 +144,18 @@
     <div class="hint">
       這個網址是你架設的後端伺服器位址（負責呼叫 YouTube API 與儲存分類標記）。<br><br>
       設定會儲存在這台裝置的瀏覽器裡，換裝置或清除瀏覽器資料需要重新輸入。
+    </div>
+
+    <div class="field" style="margin-top:12px; border-top:1px solid #0002; padding-top:16px;">
+      <label>播放清單搜尋（需要 Google 登入授權）</label>
+      <div class="status" id="authStatus" style="padding:0;">尚未檢查</div>
+      <div class="search-row" style="padding:0;">
+        <button class="btn-primary" id="googleLoginBtn" style="flex:1;">使用 Google 登入</button>
+      </div>
+      <div class="search-row" style="padding:0;">
+        <button class="btn-save" id="syncPlaylistsBtn" style="flex:1; min-height:48px;">同步播放清單</button>
+      </div>
+      <div class="hint" id="syncStatus"></div>
     </div>
   </div>
 </section>
@@ -178,6 +191,7 @@
       if (btn.dataset.page === "tags") loadTags();
       if (btn.dataset.page === "settings") {
         document.getElementById("apiBaseInput").value = apiBase;
+        checkAuthStatus();
       }
     });
   });
@@ -189,6 +203,53 @@
     alert("已儲存。回到搜尋分頁即可使用。");
   });
 
+  // ---------- Google 登入 / 播放清單同步 ----------
+  var authStatusEl = document.getElementById("authStatus");
+  var syncStatusEl = document.getElementById("syncStatus");
+
+  function checkAuthStatus(){
+    if (!apiBase){ authStatusEl.textContent = "請先填寫並儲存後端網址"; return; }
+    authStatusEl.textContent = "檢查中…";
+    fetch(apiBase + "/api/auth/status").then(function(r){ return r.json(); }).then(function(d){
+      authStatusEl.textContent = d.authorized ? "✅ 已登入 Google，可以同步播放清單" : "尚未登入";
+    }).catch(function(){
+      authStatusEl.textContent = "檢查失敗，請確認後端網址是否正確";
+    });
+  }
+
+  document.getElementById("googleLoginBtn").addEventListener("click", function(){
+    if (!requireApiBase()) return;
+    var returnTo = window.location.origin + window.location.pathname;
+    window.location.href = apiBase + "/auth/google/start?return_to=" + encodeURIComponent(returnTo);
+  });
+
+  document.getElementById("syncPlaylistsBtn").addEventListener("click", function(){
+    if (!requireApiBase()) return;
+    syncStatusEl.textContent = "同步中，播放清單多的話可能要一點時間…";
+    fetch(apiBase + "/api/playlists/sync", { method: "POST" }).then(function(r){
+      if (!r.ok) return r.json().then(function(e){ throw new Error(e.detail || r.statusText); });
+      return r.json();
+    }).then(function(d){
+      syncStatusEl.textContent = "✅ 已同步 " + d.playlists + " 個播放清單，共 " + d.videos + " 部影片";
+    }).catch(function(err){
+      syncStatusEl.textContent = "❌ 同步失敗：" + err.message;
+    });
+  });
+
+  // 從 Google 登入導回時，網址會帶 authed=1 或 auth_error 參數
+  (function handleAuthRedirect(){
+    var params = new URLSearchParams(window.location.search);
+    if (params.has("authed")){
+      history.replaceState(null, "", window.location.pathname);
+      document.querySelector('nav.bottom button[data-page="settings"]').click();
+      setTimeout(function(){ alert("Google 登入成功，可以按「同步播放清單」了。"); }, 100);
+    } else if (params.has("auth_error")){
+      history.replaceState(null, "", window.location.pathname);
+      document.querySelector('nav.bottom button[data-page="settings"]').click();
+      setTimeout(function(){ alert("Google 登入失敗：" + params.get("auth_error")); }, 100);
+    }
+  })();
+
   function requireApiBase(){
     if (!apiBase){
       alert("請先到「設定」分頁填入後端 API 網址。");
@@ -199,16 +260,20 @@
   }
 
   // ---------- 搜尋範圍切換 ----------
-  document.getElementById("scopeChannel").addEventListener("click", function(){
-    scope = "channel";
-    document.getElementById("scopeChannel").classList.add("active");
-    document.getElementById("scopeGlobal").classList.remove("active");
-  });
-  document.getElementById("scopeGlobal").addEventListener("click", function(){
-    scope = "global";
-    document.getElementById("scopeGlobal").classList.add("active");
-    document.getElementById("scopeChannel").classList.remove("active");
-  });
+  var scopeButtons = {
+    channel: document.getElementById("scopeChannel"),
+    global: document.getElementById("scopeGlobal"),
+    playlist: document.getElementById("scopePlaylist")
+  };
+  function setScope(newScope){
+    scope = newScope;
+    Object.keys(scopeButtons).forEach(function(k){
+      scopeButtons[k].classList.toggle("active", k === newScope);
+    });
+  }
+  scopeButtons.channel.addEventListener("click", function(){ setScope("channel"); });
+  scopeButtons.global.addEventListener("click", function(){ setScope("global"); });
+  scopeButtons.playlist.addEventListener("click", function(){ setScope("playlist"); });
 
   // ---------- 搜尋 ----------
   var resultsEl = document.getElementById("results");
